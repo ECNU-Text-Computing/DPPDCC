@@ -73,26 +73,6 @@
     "epochs": 5,
     "batch_size": 32
   },
-  "DDHGCNSCL": {
-    "embed_dim": 300,
-    "hidden_dim": 128,
-    "hop": 2,
-    "n_layers": 4,
-    "etypes": [
-      "cites", "is cited by", "writes", "is writen by", "publishes", "is published by",
-              "shows", "is shown in"
-    ],
-    "ntypes": ["paper", "author", "journal", "time"],
-    "use_graph": "repeatedly",
-    "graph_name": "graph_sample_feature_vector",
-    "save_model": true,
-    "batch_graph": "ddhgcnscl",
-    "num_workers": 4,
-    "test_interval": 0,
-    "lr": 1e-4,
-    "epochs": 5,
-    "batch_size": 32
-  },
   "DDHGCNSECL": {
     "embed_dim": 300,
     "hidden_dim": 128,
@@ -107,6 +87,27 @@
     "graph_name": "graph_sample_feature_vector",
     "save_model": true,
     "batch_graph": "ddhgcns",
+    "num_workers": 4,
+    "test_interval": 0,
+    "lr": 1e-4,
+    "epochs": 5,
+    "batch_size": 32
+  },
+  "DPPDCC": {
+    "embed_dim": 300,
+    "hidden_dim": 128,
+    "hop": 2,
+    "n_layers": 4,
+    "time_layers": 4,
+    "etypes": [
+      "cites", "is cited by", "writes", "is writen by", "publishes", "is published by",
+              "shows", "is shown in"
+    ],
+    "ntypes": ["paper", "author", "journal", "time"],
+    "use_graph": "repeatedly",
+    "graph_name": "graph_sample_feature_vector",
+    "save_model": true,
+    "batch_graph": "dppdcc",
     "num_workers": 4,
     "test_interval": 0,
     "lr": 1e-4,

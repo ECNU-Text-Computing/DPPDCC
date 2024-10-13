@@ -72,12 +72,13 @@
     "lr": 1e-4,
     "batch_size": 32
   },
-  "DDHGCNSCL": {
+  "DPPDCC": {
     "embed_dim": 300,
     "hidden_dim": 64,
     "hop": 2,
-    "epochs": 5,
-    "n_layers": 4,
+    "epochs": 3,
+    "n_layers": 5,
+    "time_layers": 4,
     "etypes": [
       "cites", "is cited by", "writes", "is writen by", "publishes", "is published by",
               "shows", "is shown in"
@@ -86,7 +87,7 @@
     "use_graph": "repeatedly",
     "graph_name": "graph_sample_feature_vector",
     "save_model": true,
-    "batch_graph": "ddhgcnscl",
+    "batch_graph": "dppdcc",
     "num_workers": 1,
     "test_interval": 0,
     "eval_interval": 3,

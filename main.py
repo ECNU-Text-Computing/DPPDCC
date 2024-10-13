@@ -473,8 +473,8 @@ if __name__ == '__main__':
     parser.add_argument('--aug_rate', default=0.1, help='the aug type to learn.')
     parser.add_argument('--encoder_type', default='CCompGATSM', help='the gcn encoder type to learn.')
     parser.add_argument('--gcn_out', default='mean', help='how to get the node emb.')
-    parser.add_argument('--n_layers', default=4, help='the layers of gcn.')
-    parser.add_argument('--time_layers', default=4, help='the layers of time transformer.')
+    parser.add_argument('--n_layers', default=None, help='the layers of gcn.')
+    parser.add_argument('--time_layers', default=None, help='the layers of time transformer.')
     parser.add_argument('--edge_seq', default=None, help='the edge sequences.')
     parser.add_argument('--inter_mode', default='attn', help='the edge sequences.')
     parser.add_argument('--time_length', default=None, help='the edge sequences.')
@@ -511,7 +511,7 @@ if __name__ == '__main__':
     parser.add_argument('--dw', default=0.5, help='the loss weight of disen.')
     parser.add_argument('--etc', default=None, help='something.')
     # training
-    parser.add_argument('--num_workers', default=1, help='snapshot encoder mode.')
+    parser.add_argument('--num_workers', default=None, help='snapshot encoder mode.')
     parser.add_argument('--prefetch_factor', default=2, help='prefetch factor of dataloader.')
     parser.add_argument('--batch_size', default=None, help='the batch size.')
     parser.add_argument('--epochs', default=None, help='the epochs.')
@@ -531,8 +531,10 @@ if __name__ == '__main__':
     data_source = args.data_source
     configs = get_configs(data_source, model_list)
 
-    configs['DPPDCC'] = copy.deepcopy(configs['DDHGCNSCL'])
-    configs['DPPDCC']['batch_graph'] = 'dppdcc'
+    # configs['DPPDCC'] = copy.deepcopy(configs['DDHGCNSCL'])
+    # configs['DPPDCC']['batch_graph'] = 'dppdcc'
+    configs['DDHGCNSCL'] = copy.deepcopy(configs['DPPDCC'])
+    configs['DDHGCNSCL']['batch_graph'] = 'ddhgcnscl'
 
     if args.phase in model_list:
         cur_model = args.phase

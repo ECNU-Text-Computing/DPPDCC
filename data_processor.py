@@ -1,3 +1,4 @@
+import dgl
 import joblib
 import jsonlines as jl
 from sentence_transformers import SentenceTransformer
@@ -5,10 +6,6 @@ from torch_geometric.loader import NeighborLoader
 from tqdm import tqdm
 import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
-from torchtext.data.utils import get_tokenizer
-from transformers import BertTokenizer, BertModel
-from torchtext.vocab import build_vocab_from_iterator, Vectors, vocab
-
 from our_models.DDHGCN import SparseSelecter
 from utilis.log_bar import TqdmToLogger
 from utilis.scripts import get_configs, IndexDict, add_new_elements, SampleAllNeighbors, get_pareto_dist, \
@@ -17,10 +14,9 @@ from utilis.bertwhitening_utils import input_to_vec, compute_kernel_bias, transf
 from utilis.collate_batch import *
 import networkx as nx
 from utilis.eval_sampler import DistributedEvalSampler
-
+from utilis.tokenizers import *
 
 # tokenizer = get_tokenizer('basic_english')
-UNK, PAD, SEP = '[UNK]', '[PAD]', '[SEP]'
 SBERT_MODELS = ['sbert', 'sbw']
 BERT_MODELS = ['bert', 'bw', 'specter2']
 
@@ -476,7 +472,8 @@ class DataProcessor:
         print(name)
         print(tokenizer_path)
         print('graph mode:', mode)
-        graph = torch.load(self.data_cat_path + 'graph_sample')
+        # graph = torch.load(self.data_cat_path + 'graph_sample')
+        graph = dgl.load_graphs(self.data_cat_path + 'graph_sample.dgl')[0][0]
         node_trans = json.load(open(self.data_cat_path + 'sample_node_trans.json', 'r'))
         paper_trans = node_trans['paper']
         node_ids = list(paper_trans.values())
@@ -497,8 +494,9 @@ class DataProcessor:
 
         feature_list = []
 
-        self.tokenizer = self.get_tokenizer(tokenizer_type, tokenizer_path)
-        self.tokenizer.load_vocab()
+        if mode not in BERT_MODELS + SBERT_MODELS:
+            self.tokenizer = self.get_tokenizer(tokenizer_type, tokenizer_path)
+            self.tokenizer.load_vocab()
 
         if mode == 'vector':
             print(self.tokenizer.vectors.shape)
@@ -607,6 +605,8 @@ class DataProcessor:
                 cur_journal_src, cur_journal_dst = cur_journal_src.numpy(), cur_journal_dst.numpy()
                 # print(oid_cid_trans)
                 # print(cur_author_src, cur_author_dst)
+
+                # authors
                 for author in tqdm(sub_graph.nodes('author').numpy()):
                     temp_papers = cur_author_dst[cur_author_src == author]
                     # temp_papers = cur_author_dst[np.argwhere(cur_author_src == author)]
@@ -626,6 +626,7 @@ class DataProcessor:
                     sub_graph.nodes['author'].data['h'] = torch.from_numpy(np.stack(author_features, axis=0))
                 print(sub_graph.nodes['author'].data['h'].shape)
 
+                # journals
                 journal_features = []
                 for journal in tqdm(sub_graph.nodes('journal').numpy()):
                     temp_papers = cur_journal_dst[cur_journal_src == journal]
@@ -643,6 +644,7 @@ class DataProcessor:
                     sub_graph.nodes['journal'].data['h'] = torch.from_numpy(np.stack(journal_features, axis=0))
                 print(sub_graph.nodes['journal'].data['h'].shape)
 
+                # times
                 time_features = []
                 cur_times = sorted(set(sub_graph.nodes['paper'].data['time'].squeeze(dim=-1).numpy().tolist()))
                 for pub_time in tqdm(cur_times):
@@ -737,113 +739,6 @@ class CustomDataLoader(DataLoader):
         self.phase = phase
 
 
-class BasicTokenizer:
-    def __init__(self, max_len=256, data_path=None):
-        self.tokenizer = get_tokenizer('basic_english')
-        self.max_len = max_len
-        self.vocab = None
-        self.data_path = data_path
-        self.vectors = None
-
-    def yield_tokens(self, data_iter):
-        for content in data_iter:
-            yield self.tokenizer(content)
-
-    def build_vocab(self, text_list, seed):
-        self.vocab = build_vocab_from_iterator(self.yield_tokens(text_list), specials=[UNK, PAD])
-        self.vocab.set_default_index(self.vocab[UNK])
-        torch.save(self.vocab, self.data_path + 'vocab_{}'.format(seed))
-
-    def load_vocab(self, text_list, seed):
-        try:
-            self.vocab = torch.load(self.data_path + 'vocab_{}'.format(seed))
-        except Exception as e:
-            print(e)
-            self.build_vocab(text_list, seed)
-
-    def encode(self, text):
-        tokens = self.tokenizer(text)
-        seq_len = len(tokens)
-        if seq_len <= self.max_len:
-            tokens += (self.max_len - seq_len) * [PAD]
-        else:
-            tokens = tokens[:self.max_len]
-            seq_len = self.max_len
-        ids = self.vocab(tokens)
-        masks = [1] * seq_len + [0] * (self.max_len - seq_len)
-        return ids, seq_len, masks
-
-
-class CustomBertTokenizer(BasicTokenizer):
-    def __init__(self, max_len=256, bert_path=None, data_path=None):
-        super(CustomBertTokenizer, self).__init__(max_len)
-        self.tokenizer = BertTokenizer.from_pretrained(bert_path)
-
-    def build_vocab(self, text_list=None, seed=None):
-        self.vocab = {
-            PAD: self.tokenizer.convert_tokens_to_ids([PAD])[0],
-            UNK: self.tokenizer.convert_tokens_to_ids([UNK])[0],
-            SEP: self.tokenizer.convert_tokens_to_ids([SEP])[0]
-        }
-        print('bert already have vocab')
-
-    def load_vocab(self, text_list=None, seed=None):
-        self.vocab = {
-            PAD: self.tokenizer.convert_tokens_to_ids([PAD])[0],
-            UNK: self.tokenizer.convert_tokens_to_ids([UNK])[0],
-            SEP: self.tokenizer.convert_tokens_to_ids([SEP])[0]
-        }
-        print('bert already have vocab')
-
-    def encode(self, text):
-        result = self.tokenizer(text)
-        result = self.tokenizer.pad(result, padding='max_length', max_length=self.max_len)
-        ids = result['input_ids']
-        mask = result['attention_mask']
-        seq_len = sum(mask)
-        # SEP_IDX = self.tokenizer.convert_tokens_to_ids([SEP])
-        SEP_IDX = self.tokenizer.vocab[SEP]
-        if seq_len > self.max_len:
-            ids = ids[:self.max_len - 1] + [SEP_IDX]
-            mask = mask[:self.max_len]
-            seq_len = self.max_len
-        return ids, seq_len, mask
-
-
-class VectorTokenizer(BasicTokenizer):
-    def __init__(self, max_len=256, vector_path=None, data_path=None, name=None):
-        super(VectorTokenizer, self).__init__(max_len, data_path)
-        self.vector_path = vector_path
-        self.vectors = None
-        self.name = name
-
-    def build_vocab(self, text_list=None, seed=None):
-        vec = Vectors(self.vector_path)
-        self.vocab = vocab(vec.stoi, min_freq=0)
-        self.vocab.append_token(UNK)
-        self.vocab.append_token(PAD)
-        self.vocab.set_default_index(self.vocab[UNK])
-        unk_vec = torch.mean(vec.vectors, dim=0).unsqueeze(0)
-        pad_vec = torch.zeros(vec.vectors.shape[1]).unsqueeze(0)
-        self.vectors = torch.cat([vec.vectors, unk_vec, pad_vec])
-        if self.name:
-            torch.save(self.vocab, self.data_path + '{}_vocab'.format(self.name))
-            torch.save(self.vectors, self.data_path + self.name)
-        else:
-            torch.save(self.vocab, self.data_path + 'vector_vocab')
-            torch.save(self.vectors, self.data_path + 'vectors')
-
-    def load_vocab(self, text_list=None, seed=None):
-        try:
-            if self.name:
-                self.vocab = torch.load(self.data_path + '{}_vocab'.format(self.name))
-                self.vectors = torch.load(self.data_path + self.name)
-            else:
-                self.vocab = torch.load(self.data_path + 'vector_vocab')
-                self.vectors = torch.load(self.data_path + 'vectors')
-        except Exception as e:
-            print(e)
-            self.build_vocab()
 
 
 def make_data(data_source, config, seed=True, graph=None):
@@ -853,7 +748,8 @@ def make_data(data_source, config, seed=True, graph=None):
     else:
         dataProcessor.split_data(by='time', fixed_num=config['fixed_num'], time=config['time'],
                                  cut_time=config['cut_time'])
-    dataProcessor.get_tokenizer(config['tokenizer_type'], config['tokenizer_path'])
+    if graph not in BERT_MODELS + SBERT_MODELS:
+        dataProcessor.get_tokenizer(config['tokenizer_type'], config['tokenizer_path'])
     if graph:
         dataProcessor.get_feature_graph(config['tokenizer_type'], config['tokenizer_path'],
                                         mode=graph, split_abstract=config['split_abstract'],
@@ -1004,30 +900,7 @@ def get_simple_graph(filename, srcs, dsts):
                 fw.write(',' + str(dst))
 
 
-def add_times(data_path, graphs, graph_name):
-    # joblib.load(self.data_cat_path + graph_name + '_' + str(time) + '.job')
-    for pub_time in tqdm(graphs['all_graphs']):
-        cur_graph = graphs['all_graphs'][pub_time]
-        papers = cur_graph.nodes('paper')
-        trans_dict = dict(zip(cur_graph.nodes['time'].data[dgl.NID].numpy().tolist(),
-                              cur_graph.nodes('time').numpy().tolist()))
-        times = torch.tensor([trans_dict[t]
-                              for t in cur_graph.nodes['paper'].data['time'].squeeze(dim=-1).numpy().tolist()],
-                             dtype=torch.long)
-        if 'oid' not in cur_graph.nodes['time'].data:
-            cur_graph.nodes['time'].data['oid'] = cur_graph.nodes['time'].data[dgl.NID]
-
-        if 'is shown in' not in cur_graph.etypes:
-            edges = {
-                ('paper', 'is shown in', 'time'): (papers, times),
-                ('time', 'shows', 'paper'): (times, papers)
-            }
-            cur_graph = add_new_elements(cur_graph, edges=edges)
-            print(cur_graph)
-            joblib.dump(cur_graph, data_path + graph_name + '_' + str(pub_time) + '.job')
-
-
-def add_graph_feats(data_source, graph_type=None):
+def add_co_strength(data_source, graph_type=None):
     # add co-cited/citing strength to the graph
     data_path = './data/{}/'.format(data_source)
     graphs = [file for file in os.listdir(data_path) if file.startswith('graph_sample') and not file.endswith('embs')]
@@ -1045,10 +918,11 @@ def add_graph_feats(data_source, graph_type=None):
     for graph_name in graphs:
         print(graph_name)
         save_indicator = False
-        if graph_name == 'graph_sample':
-            cur_graph = torch.load(data_path + graph_name)
-        else:
-            cur_graph = joblib.load(data_path + graph_name)
+        # if graph_name == 'graph_sample':
+        #     cur_graph = torch.load(data_path + graph_name)
+        # else:
+        #     cur_graph = joblib.load(data_path + graph_name)
+        cur_graph = dgl.load_graphs(data_path + graph_name)[0][0]
         for edge in [('paper', 'cites', 'paper'), ('paper', 'is cited by', 'paper')]:
             cites_graph = cur_graph[edge]
             if 'r_sim' not in cites_graph.edata:
@@ -1072,10 +946,11 @@ def add_graph_feats(data_source, graph_type=None):
                 print(all_edata.shape)
                 cites_graph.edata['r_sim'] = all_edata
         if save_indicator:
-            if graph_name == 'graph_sample':
-                torch.save(cur_graph, data_path + graph_name)
-            else:
-                joblib.dump(cur_graph, data_path + graph_name)
+            # if graph_name == 'graph_sample':
+            #     torch.save(cur_graph, data_path + graph_name)
+            # else:
+            #     joblib.dump(cur_graph, data_path + graph_name)
+            dgl.save_graphs(data_path + graph_name, [cur_graph])
 
 
 def job2dgl(data_source, graph_type):
@@ -1180,6 +1055,7 @@ if __name__ == "__main__":
             temp_config['tokenizer_type'] = 'glove'
             temp_config['tokenizer_path'] = './data/glove'
         make_data(args.data_source, temp_config, seed=args.seed, graph=args.graph)
+        add_co_strength(args.data_source, graph_type=args.graph)
     elif args.phase == 'get_embs':
         temp_config = configs['default']
         if args.graph == 'bw':
@@ -1203,14 +1079,6 @@ if __name__ == "__main__":
     elif args.phase == 'show_graph_info':
         dataProcessor = DataProcessor(args.data_source, norm=True)
         dataProcessor.show_graph_info()
-    elif args.phase == 'add_times':
-        graph_name = configs['default']['graph_name']
-        if args.graph:
-            graph_name = '_'.join(configs['default']['graph_name'].split('_')[:-1]
-                                  + [args.graph.split('+')[0]])
-        dataProcessor = DataProcessor(args.data_source, norm=True, time=configs['default']['time'])
-        graphs = dataProcessor.load_graphs(graph_name, time_length=configs['default']['time_length'])
-        add_times(dataProcessor.data_cat_path, graphs, graph_name)
     elif args.phase == 'add_graphs':
         temp_config = configs['default']
         if args.graph == 'vector':
@@ -1236,7 +1104,7 @@ if __name__ == "__main__":
             temp_config['tokenizer_path'] = './data/glove'
         add_graphs(args.data_source, temp_config, seed=args.seed, graph=args.graph)
     elif args.phase == 'graph_feats':
-        add_graph_feats(args.data_source, args.graph)
+        add_co_strength(args.data_source, args.graph)
     elif args.phase == 'job2dgl':
         job2dgl(args.data_source, args.graph)
     elif args.phase == 'job2jsonl':

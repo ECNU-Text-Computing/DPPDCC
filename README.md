@@ -16,8 +16,9 @@ pip install -r requirements.txt
 You can download demo dataset here:
 https://drive.google.com/file/d/1RWStBN5zXEbjqSGDT8bQU38GHSo6q-P4/view?usp=sharing
 
-We will share our dealt data and checkpoints here:
-XXX
+Our dealt data and model checkpoints:<br>
+Data: https://drive.google.com/file/d/1HG4fqg5vRh1KuMFp_aMNyZvh-9kEnlGb/view?usp=sharing <br>
+Model: https://drive.google.com/file/d/1bcK4vP6xRc-1Xwv_Bkyz54t8XmKKg-ch/view?usp=sharing
 
 
 ## Usage
@@ -32,18 +33,20 @@ XXX
 [//]: # (```)
 
 ```sh
+python .\data_processor.py --phase make_data_graph --data_source geography
+python main.py --phase get_model_graph_data --data_source geography --model DDHGCNSCL
 python main.py --phase get_model_graph_data --data_source geography --model DPPDCC
 ```
 
 ### Training
 ```sh
 # DPPDCC
-python main.py --phase DPPDCC --data_source geography --n_layers 4 --encoder_type 'CCompGATSM' --topic_module 'scl' --pop_module 'accum' --type orthog --num_workers 8
+python main.py --phase DPPDCC --data_source geography
 ```
 
 ### Testing
 
 ```sh
 # DPPDCC
-python main.py --phase test_results --model  DPPDCC --data_source geography --n_layers 4 --encoder_type 'CCompGATSM' --topic_module 'scl' --pop_module 'accum' --type orthog --num_workers 8
+python main.py --phase test_results --model  DPPDCC --data_source geography
 ```
