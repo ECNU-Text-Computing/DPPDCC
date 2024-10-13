@@ -33,7 +33,7 @@ Model: https://drive.google.com/file/d/1bcK4vP6xRc-1Xwv_Bkyz54t8XmKKg-ch/view?us
 [//]: # (```)
 
 ```sh
-python .\data_processor.py --phase make_data_graph --data_source geography
+python data_processor.py --phase make_data_graph --data_source geography
 python main.py --phase get_model_graph_data --data_source geography --model DDHGCNSCL
 python main.py --phase get_model_graph_data --data_source geography --model DPPDCC
 ```
